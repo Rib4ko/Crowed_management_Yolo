@@ -19,6 +19,12 @@ roi_vertices = np.array([
 ], np.int32)
 # --------------------------------------------------
 
+# --- DAY 2, STEP 3: Define Alert Threshold ---
+# This is the "max capacity" for your zone.
+# Change this number based on your video and zone size.
+maxperzone = 10
+# ---------------------------------------------
+
 track_colors = {}
 
 # --- Video Processing ---
@@ -28,7 +34,7 @@ if not cap.isOpened():
     print(f"Error: Could not open video file '{VIDEO_PATH}'.")
     exit()
 
-print("Day 2, Step 2: Counting people in ROI. Press 'ESC' to exit.")
+print("Day 2, Step 3: Running full MVP with Alert System. Press 'ESC' to exit.")
 
 while True:
     ret, frame = cap.read()
@@ -37,14 +43,14 @@ while True:
         print("End of video stream.")
         break
 
-    # --- DAY 2, STEP 1: Draw the Risk Zone (No change here) ---
+    # --- DAY 2, STEP 1: Draw the Risk Zone ---
     cv2.polylines(frame, [roi_vertices], isClosed=True, color=(255, 0, 0), thickness=2)
-    # ------------------------------------------------------
 
-    # --- DAY 2, STEP 2: Initialize counters ---
+    # --- DAY 2, STEP 2 & 3: Initialize counters and flags ---
     person_count_total = 0
-    zone_count = 0  # New counter for people inside the zone
-    # ------------------------------------------
+    zone_count = 0
+    is_alert = False  # --- DAY 2, STEP 3: Alert flag, reset every frame
+    # ----------------------------------------------------
 
     # 1. Run YOLOv8 Tracking
     results = model.track(
@@ -61,7 +67,7 @@ while True:
         boxes = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.cpu().numpy().astype(int)
 
-        person_count_total = len(track_ids)  # This is the total count
+        person_count_total = len(track_ids)
 
         # 3. Draw Bounding Boxes and Track IDs
         for box, track_id in zip(boxes, track_ids):
@@ -80,34 +86,46 @@ while True:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
             # --- DAY 2, STEP 2: Check if person is in the zone ---
-            # We calculate the bottom-center point of the bounding box.
-            # This point is a good proxy for the person's "location" on the ground.
             center_x = (x1 + x2) // 2
-            center_y = y2  # Use the bottom 'y' coordinate
+            center_y = y2
 
-            # Check if this (x, y) point is inside our polygon
-            # cv2.pointPolygonTest returns:
-            #   > 0 if inside
-            #   = 0 if on the line
-            #   < 0 if outside
             if cv2.pointPolygonTest(roi_vertices, (center_x, center_y), False) > 0:
-                # This person is INSIDE the zone
                 zone_count += 1
             # ----------------------------------------------------
 
-    # 4. Display Counts
-    # Display total count (Same as before)
+    # 4. Display Counts and Handle Alerts
+    # Display total count
     cv2.putText(frame, f"Total People: {person_count_total}", (20, 50),
-                cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 2)
+                cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 255, 255), 2)  # White text
 
-    # --- DAY 2, STEP 2: Display the new zone count ---
-    # We'll display this count in green, just below the total count
-    cv2.putText(frame, f"Zone Count: {zone_count}", (20, 90),
-                cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 2)  # Green text
+    # --- DAY 2, STEP 3: Check alert condition and display metrics ---
+    zone_color = (0, 255, 0)  # Default: Green (Safe)
+
+    # Check if the count exceeds the threshold
+
+    if zone_count > maxperzone:
+        zone_color = (0, 0, 255)  # Alert: Red
+        is_alert = True
+
+    # Display the zone count (e.g., "Zone Count: 12 / 10")
+    cv2.putText(frame, f"Zone Count: {zone_count} / {maxperzone}", (20, 90),
+                cv2.FONT_HERSHEY_DUPLEX, 1.0, zone_color, 2)
+
+    # If in alert state, draw the big warning message
+    if is_alert:
+        # Get frame dimensions to position text in the center
+        (text_w, text_h), _ = cv2.getTextSize("!! it's Crowded !!", cv2.FONT_HERSHEY_TRIPLEX, 1.5, 3)
+        center_x = (frame.shape[1] - text_w) // 2
+        center_y = (frame.shape[0] + text_h) // 2
+
+        cv2.putText(frame, "!! it's Crowded !!",
+
+                    (center_x, center_y),
+                    cv2.FONT_HERSHEY_TRIPLEX, 1.5, (0, 0, 255), 3)
     # ---------------------------------------------------
 
     # Show the frame
-    cv2.imshow("Crowd Management MVP - Step 2: Counting", frame)
+    cv2.imshow("Crowd Management MVP - FINAL ALERT SYSTEM", frame)
 
     if cv2.waitKey(1) & 0xFF == 27:
         break
@@ -115,4 +133,4 @@ while True:
 # --- Cleanup ---
 cap.release()
 cv2.destroyAllWindows()
-print("Step 2 complete. The system is now counting people inside the zone.")
+print("MVP logic complete. Ready to present!")
