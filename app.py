@@ -1,5 +1,5 @@
 import cv2
-import numpy as np  # <-- ADDED: Needed for handling polygon coordinates
+import numpy as np
 from ultralytics import YOLO
 import random
 
@@ -10,11 +10,7 @@ PERSON_CLASS_ID = 0
 CONFIDENCE_THRESHOLD = 0.5
 
 # --- DAY 2, STEP 1: Define the Risk Zone (ROI) ---
-#
-# !! IMPORTANT !!
-# You MUST adjust these (x, y) coordinates to fit your 'test.mp4' video
-# I've put in some example coordinates for a zone on the right side.
-#
+# Make sure these coordinates are correct for your video!
 roi_vertices = np.array([
     [500, 0],  # Top-left corner of the zone
     [800, 0],  # Top-right corner
@@ -32,7 +28,7 @@ if not cap.isOpened():
     print(f"Error: Could not open video file '{VIDEO_PATH}'.")
     exit()
 
-print("Day 2, Step 1: Drawing the ROI. Press 'ESC' to exit.")
+print("Day 2, Step 2: Counting people in ROI. Press 'ESC' to exit.")
 
 while True:
     ret, frame = cap.read()
@@ -41,20 +37,16 @@ while True:
         print("End of video stream.")
         break
 
-    # --- DAY 2, STEP 1: Draw the Risk Zone on the Frame ---
-    # We draw the polygon on every frame
-    cv2.polylines(
-        frame,
-        [roi_vertices],  # The coordinates
-        isClosed=True,  # Connect the last point to the first
-        color=(255, 0, 0),  # Blue color (BGR)
-        thickness=2
-    )
-
-
+    # --- DAY 2, STEP 1: Draw the Risk Zone (No change here) ---
+    cv2.polylines(frame, [roi_vertices], isClosed=True, color=(255, 0, 0), thickness=2)
     # ------------------------------------------------------
 
-    # 1. Run YOLOv8 Tracking (Same as Day 1)
+    # --- DAY 2, STEP 2: Initialize counters ---
+    person_count_total = 0
+    zone_count = 0  # New counter for people inside the zone
+    # ------------------------------------------
+
+    # 1. Run YOLOv8 Tracking
     results = model.track(
         source=frame,
         persist=True,
@@ -64,16 +56,14 @@ while True:
         verbose=False
     )
 
-    person_count_total = 0
-
-    # 2. Process Tracking Results (Same as Day 1)
+    # 2. Process Tracking Results
     if results[0].boxes.id is not None:
         boxes = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.cpu().numpy().astype(int)
 
-        person_count_total = len(track_ids)
+        person_count_total = len(track_ids)  # This is the total count
 
-        # 3. Draw Bounding Boxes and Track IDs (Same as Day 1)
+        # 3. Draw Bounding Boxes and Track IDs
         for box, track_id in zip(boxes, track_ids):
             x1, y1, x2, y2 = map(int, box)
 
@@ -89,19 +79,40 @@ while True:
             cv2.putText(frame, label, (x1, y1 - 15),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-    # 4. Display the total count (Same as Day 1)
-    count_text = f"Total People: {person_count_total}"
-    cv2.putText(frame, count_text, (20, 50),
+            # --- DAY 2, STEP 2: Check if person is in the zone ---
+            # We calculate the bottom-center point of the bounding box.
+            # This point is a good proxy for the person's "location" on the ground.
+            center_x = (x1 + x2) // 2
+            center_y = y2  # Use the bottom 'y' coordinate
+
+            # Check if this (x, y) point is inside our polygon
+            # cv2.pointPolygonTest returns:
+            #   > 0 if inside
+            #   = 0 if on the line
+            #   < 0 if outside
+            if cv2.pointPolygonTest(roi_vertices, (center_x, center_y), False) > 0:
+                # This person is INSIDE the zone
+                zone_count += 1
+            # ----------------------------------------------------
+
+    # 4. Display Counts
+    # Display total count (Same as before)
+    cv2.putText(frame, f"Total People: {person_count_total}", (20, 50),
                 cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 2)
 
-    # Show the frame
-    cv2.imshow("Crowd Management MVP - Step 1: ROI", frame)
+    # --- DAY 2, STEP 2: Display the new zone count ---
+    # We'll display this count in green, just below the total count
+    cv2.putText(frame, f"Zone Count: {zone_count}", (20, 90),
+                cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 2)  # Green text
+    # ---------------------------------------------------
 
-    # Break loop on 'ESC' key
+    # Show the frame
+    cv2.imshow("Crowd Management MVP - Step 2: Counting", frame)
+
     if cv2.waitKey(1) & 0xFF == 27:
         break
 
 # --- Cleanup ---
 cap.release()
 cv2.destroyAllWindows()
-print("Step 1 complete. The ROI is now being drawn.")
+print("Step 2 complete. The system is now counting people inside the zone.")
