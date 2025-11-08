@@ -1,20 +1,28 @@
 import cv2
+import numpy as np  # <-- ADDED: Needed for handling polygon coordinates
 from ultralytics import YOLO
 import random
 
 # --- Configuration ---
-# Load the YOLOv8 model (yolov8n.pt is fast, yolov8m.pt is more accurate)
 model = YOLO('yolov8n.pt')
-
-# Define the path to your video file
 VIDEO_PATH = "cctv.mp4"
-
-# COCO Dataset Class ID for 'person'
 PERSON_CLASS_ID = 0
 CONFIDENCE_THRESHOLD = 0.5
 
-# Store for track history (to draw paths, etc. - good for demos)
-# We'll also store a random color for each track ID
+# --- DAY 2, STEP 1: Define the Risk Zone (ROI) ---
+#
+# !! IMPORTANT !!
+# You MUST adjust these (x, y) coordinates to fit your 'test.mp4' video
+# I've put in some example coordinates for a zone on the right side.
+#
+roi_vertices = np.array([
+    [500, 0],  # Top-left corner of the zone
+    [800, 0],  # Top-right corner
+    [900, 1000],  # Bottom-right corner
+    [400, 1000]  # Bottom-left corner
+], np.int32)
+# --------------------------------------------------
+
 track_colors = {}
 
 # --- Video Processing ---
@@ -24,7 +32,7 @@ if not cap.isOpened():
     print(f"Error: Could not open video file '{VIDEO_PATH}'.")
     exit()
 
-print("Starting video processing for Day 1 MVP... Press 'ESC' to exit.")
+print("Day 2, Step 1: Drawing the ROI. Press 'ESC' to exit.")
 
 while True:
     ret, frame = cap.read()
@@ -33,64 +41,61 @@ while True:
         print("End of video stream.")
         break
 
-    # 1. Run YOLOv8 Tracking
-    # 'persist=True' tells the tracker to remember IDs between frames
-    # 'tracker="bytetrack.yaml"' specifies the tracker algorithm
+    # --- DAY 2, STEP 1: Draw the Risk Zone on the Frame ---
+    # We draw the polygon on every frame
+    cv2.polylines(
+        frame,
+        [roi_vertices],  # The coordinates
+        isClosed=True,  # Connect the last point to the first
+        color=(255, 0, 0),  # Blue color (BGR)
+        thickness=2
+    )
+
+
+    # ------------------------------------------------------
+
+    # 1. Run YOLOv8 Tracking (Same as Day 1)
     results = model.track(
         source=frame,
         persist=True,
         classes=[PERSON_CLASS_ID],
         conf=CONFIDENCE_THRESHOLD,
         tracker="bytetrack.yaml",
-        verbose=False  # Suppress console logs
+        verbose=False
     )
 
-    person_count = 0
+    person_count_total = 0
 
-    # 2. Process Tracking Results
-    # Check if any tracks were found
+    # 2. Process Tracking Results (Same as Day 1)
     if results[0].boxes.id is not None:
-
-        # Get all boxes, track IDs, and confidences
         boxes = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.cpu().numpy().astype(int)
-        confs = results[0].boxes.conf.cpu().numpy()
 
-        person_count = len(track_ids)
+        person_count_total = len(track_ids)
 
-        # 3. Draw Bounding Boxes and Track IDs
-        for box, track_id, conf in zip(boxes, track_ids, confs):
+        # 3. Draw Bounding Boxes and Track IDs (Same as Day 1)
+        for box, track_id in zip(boxes, track_ids):
             x1, y1, x2, y2 = map(int, box)
 
-            # --- Get or create a unique color for this track_id ---
             if track_id not in track_colors:
-                # Generate a random color (BGR format)
                 track_colors[track_id] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-
             color = track_colors[track_id]
 
-            # Draw the bounding box
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
-            # Prepare text: "ID: [id]"
             label = f"ID: {track_id}"
-
-            # Calculate text size for background
             (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-
-            # Draw a filled rectangle as a background for the label
             cv2.rectangle(frame, (x1, y1 - h - 10), (x1 + w, y1 - 10), color, -1)
-            # Draw the text label
             cv2.putText(frame, label, (x1, y1 - 15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)  # White text
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-    # 4. Display the total count
-    count_text = f"People Count: {person_count}"
+    # 4. Display the total count (Same as Day 1)
+    count_text = f"Total People: {person_count_total}"
     cv2.putText(frame, count_text, (20, 50),
-                cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 2)  # Red Count
+                cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 2)
 
     # Show the frame
-    cv2.imshow("Crowd Management MVP - Day 1: Tracking", frame)
+    cv2.imshow("Crowd Management MVP - Step 1: ROI", frame)
 
     # Break loop on 'ESC' key
     if cv2.waitKey(1) & 0xFF == 27:
@@ -99,4 +104,4 @@ while True:
 # --- Cleanup ---
 cap.release()
 cv2.destroyAllWindows()
-print("Day 1 MVP processing complete.")
+print("Step 1 complete. The ROI is now being drawn.")
